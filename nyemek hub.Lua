@@ -1,4 +1,4 @@
--- Fish It Script - Atomic Style Full Features
+-- Nyemek Hub Script - Nyemek Style Full Features
 -- Version: 4.0 Premium
 -- All Features Included
 
@@ -1127,3 +1127,4 @@ print("🎣 Version: 4.0 - Atomic Style")
 print("📝 Full Features Activated")
 print("👤 User: " .. Player.Name)
 print("════════════════════════════════════════")
+
