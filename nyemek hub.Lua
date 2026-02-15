@@ -1,698 +1,373 @@
 --[[
-FISH IT SCRIPT - RAYFIELD EDITION
-Fitur lengkap Auto Fishing, Auto Sell, Teleport, ESP, dll.
-Dibuat berdasarkan referensi dari berbagai sumber
+FISH IT SCRIPT - UNIVERSAL EXECUTOR SUPPORT
+Support semua executor (Krnl, Synapse, Fluxus, Delta, Arceus X, dll)
+Auto update dari GitHub
 ]]
 
--- Validasi Place ID game Fish It
-local validPlaceIds = {
-    [121864768012064] = true, -- Fish It place ID utama
-    -- Tambahkan place ID lain jika diperlukan
-}
-
-if not validPlaceIds[game.PlaceId] then
+-- Cek game
+if game.PlaceId ~= 121864768012064 then
     game:GetService("StarterGui"):SetCore("SendNotification", {
         Title = "Fish It Script",
-        Text = "Game tidak terdeteksi sebagai Fish It! Script mungkin tidak berfungsi.",
+        Text = "❌ Bukan game Fish It! Script hanya untuk Fish It",
         Duration = 5
     })
+    return
 end
 
--- Load Rayfield UI Library
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Loadstring dari GitHub (RAW URL)
+local scriptUrl = "https://raw.githubusercontent.com/Regall-art/Nyemek-Hub-By-Synx/refs/heads/main/nyemek%20hub.Lua" -- GANTI DENGAN URL GITHUB KALIAN
 
--- Buat Window utama
-local Window = Rayfield:CreateWindow({
-    Name = "⚡ FISH IT - ATOMIC HUB ⚡",
-    Icon = 0,
-    LoadingTitle = "FISH IT SCRIPT 2026",
-    LoadingSubtitle = "by Atomic Hub",
-    Theme = "Default",
-    DisableRayfieldPrompts = false,
-    DisableBuildWarnings = false,
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "AtomicHub_FishIt",
-        FileName = "Config"
-    },
-    Discord = {
-        Enabled = false,
-        Invite = "",
-        RememberJoins = false
-    },
-    KeySystem = false
-})
-
--- Services
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
-
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-
--- Variables Global
-local isFarming = false
-local isAutoSelling = false
-local isTeleporting = false
-local isInfJump = false
-local isESPEnabled = false
-local isAntiAfk = false
-local isAutoUpgrade = false
-local isAutoEquip = false
-local isFastCast = false
-local isAutoCollect = false
-local isNoOxygen = false
-local isWalkSpeed = false
-local isJumpPower = false
-local isFpsBoost = false
-
-local fishDelay = 1.5
-local walkSpeedValue = 16
-local jumpPowerValue = 50
-local selectedRod = ""
-local selectedBait = ""
-local teleportWaypoints = {}
-
--- Deteksi Remote Events
-local function findRemoteEvents()
-    local remotes = {}
+-- Fungsi untuk load script
+local function loadScript()
+    local success, result = pcall(function()
+        return game:HttpGet(scriptUrl)
+    end)
     
-    -- Cari di Packages/_Index
-    local packages = ReplicatedStorage:FindFirstChild("Packages")
-    if packages then
-        local index = packages:FindFirstChild("_Index")
-        if index then
-            for _, folder in pairs(index:GetChildren()) do
-                if folder:IsA("Folder") then
-                    local net = folder:FindFirstChild("net")
-                    if net then
-                        -- Remote Functions dan Events
-                        for _, remote in pairs(net:GetDescendants()) do
-                            if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") or remote:IsA("Un/reliableRemoteEvent") then
-                                local name = remote.Name
-                                if not remotes[name] then
-                                    remotes[name] = remote
-                                end
+    if success and result then
+        loadstring(result)()
+    else
+        -- Fallback script jika gagal load dari GitHub
+        loadstring([[
+            -- =============================================
+            -- FISH IT SCRIPT - FALLBACK VERSION
+            -- Support semua executor
+            -- =============================================
+            
+            -- Services
+            local Players = game:GetService("Players")
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+            local TweenService = game:GetService("TweenService")
+            local VirtualUser = game:GetService("VirtualUser")
+            local player = Players.LocalPlayer
+            
+            -- Variables
+            local isFarming = false
+            local isSelling = false
+            local isAntiAfk = false
+            local isInfJump = false
+            local fishDelay = 1.5
+            
+            -- Deteksi Remote Events (Universal)
+            local remotes = {}
+            local remotePatterns = {"cast", "reel", "fish", "sell", "buy", "collect", "upgrade"}
+            
+            -- Fungsi untuk cari remote
+            local function findRemotes()
+                local found = {}
+                for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+                    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                        for _, pattern in ipairs(remotePatterns) do
+                            if obj.Name:lower():find(pattern) then
+                                found[pattern] = obj
+                                break
                             end
                         end
                     end
                 end
+                return found
             end
-        end
-    end
-    
-    -- Cari juga di lokasi lain
-    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and not remotes[obj.Name] then
-            remotes[obj.Name] = obj
-        end
-    end
-    
-    return remotes
-end
-
-local remote = findRemoteEvents()
-print("✅ Remote Events ditemukan:", #remote)
-
--- Fungsi untuk mendapatkan remote spesifik
-local function getRemote(namePattern)
-    for remoteName, remoteObj in pairs(remote) do
-        if remoteName:lower():find(namePattern:lower()) then
-            return remoteObj
-        end
-    end
-    return nil
-end
-
--- Auto Fishing Function
-local function startFishing()
-    while isFarming do
-        task.wait(fishDelay)
-        
-        -- Simulasi cast pancing
-        local castRemote = getRemote("cast") or getRemote("start") or getRemote("fish")
-        if castRemote then
-            if castRemote:IsA("RemoteFunction") then
-                pcall(function()
-                    castRemote:InvokeServer()
+            
+            remotes = findRemotes()
+            
+            -- Fungsi Auto Fish
+            local function autoFish()
+                while isFarming do
+                    task.wait(fishDelay)
+                    
+                    -- Cast
+                    if remotes["cast"] then
+                        pcall(function()
+                            if remotes["cast"]:IsA("RemoteFunction") then
+                                remotes["cast"]:InvokeServer()
+                            else
+                                remotes["cast"]:FireServer()
+                            end
+                        end)
+                    end
+                    
+                    task.wait(0.5)
+                    
+                    -- Reel
+                    if remotes["reel"] then
+                        pcall(function()
+                            if remotes["reel"]:IsA("RemoteFunction") then
+                                remotes["reel"]:InvokeServer()
+                            else
+                                remotes["reel"]:FireServer()
+                            end
+                        end)
+                    end
+                end
+            end
+            
+            -- Fungsi Auto Sell
+            local function autoSell()
+                while isSelling do
+                    task.wait(30)
+                    if remotes["sell"] then
+                        pcall(function()
+                            if remotes["sell"]:IsA("RemoteFunction") then
+                                remotes["sell"]:InvokeServer("sellall")
+                            else
+                                remotes["sell"]:FireServer("sellall")
+                            end
+                        end)
+                    end
+                end
+            end
+            
+            -- Buat GUI Simple (Support semua executor)
+            local function createGUI()
+                -- ScreenGui
+                local screenGui = Instance.new("ScreenGui")
+                screenGui.Name = "FishItGUI"
+                screenGui.ResetOnSpawn = false
+                screenGui.Parent = player:WaitForChild("PlayerGui")
+                
+                -- Main Frame
+                local mainFrame = Instance.new("Frame")
+                mainFrame.Size = UDim2.new(0, 400, 0, 500)
+                mainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+                mainFrame.BackgroundColor3 = Color3.fromRGB(25, 35, 45)
+                mainFrame.BorderSizePixel = 0
+                mainFrame.Active = true
+                mainFrame.Draggable = true
+                mainFrame.Parent = screenGui
+                
+                -- Shadow
+                local shadow = Instance.new("ImageLabel")
+                shadow.Size = UDim2.new(1, 10, 1, 10)
+                shadow.Position = UDim2.new(0, -5, 0, -5)
+                shadow.BackgroundTransparency = 1
+                shadow.Image = "rbxassetid://1316045217"
+                shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+                shadow.ImageTransparency = 0.5
+                shadow.ScaleType = Enum.ScaleType.Slice
+                shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+                shadow.Parent = mainFrame
+                
+                -- Title Bar
+                local titleBar = Instance.new("Frame")
+                titleBar.Size = UDim2.new(1, 0, 0, 40)
+                titleBar.BackgroundColor3 = Color3.fromRGB(35, 45, 55)
+                titleBar.BorderSizePixel = 0
+                titleBar.Parent = mainFrame
+                
+                local title = Instance.new("TextLabel")
+                title.Size = UDim2.new(1, -40, 1, 0)
+                title.Position = UDim2.new(0, 10, 0, 0)
+                title.BackgroundTransparency = 1
+                title.Text = "🎣 FISH IT - ATOMIC HUB"
+                title.TextColor3 = Color3.fromRGB(255, 255, 255)
+                title.TextXAlignment = Enum.TextXAlignment.Left
+                title.Font = Enum.Font.GothamBold
+                title.TextSize = 16
+                title.Parent = titleBar
+                
+                local closeBtn = Instance.new("TextButton")
+                closeBtn.Size = UDim2.new(0, 30, 0, 30)
+                closeBtn.Position = UDim2.new(1, -35, 0, 5)
+                closeBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 70)
+                closeBtn.Text = "✕"
+                closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                closeBtn.Font = Enum.Font.GothamBold
+                closeBtn.TextSize = 16
+                closeBtn.Parent = titleBar
+                closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+                
+                -- Tab Buttons
+                local tabFrame = Instance.new("Frame")
+                tabFrame.Size = UDim2.new(1, 0, 0, 40)
+                tabFrame.Position = UDim2.new(0, 0, 0, 40)
+                tabFrame.BackgroundColor3 = Color3.fromRGB(30, 40, 50)
+                tabFrame.BorderSizePixel = 0
+                tabFrame.Parent = mainFrame
+                
+                -- Content Frame
+                local contentFrame = Instance.new("ScrollingFrame")
+                contentFrame.Size = UDim2.new(1, -20, 1, -100)
+                contentFrame.Position = UDim2.new(0, 10, 0, 90)
+                contentFrame.BackgroundColor3 = Color3.fromRGB(30, 40, 50)
+                contentFrame.BorderSizePixel = 0
+                contentFrame.ScrollBarThickness = 6
+                contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+                contentFrame.Parent = mainFrame
+                
+                local layout = Instance.new("UIListLayout")
+                layout.Padding = UDim.new(0, 8)
+                layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                layout.Parent = contentFrame
+                
+                local padding = Instance.new("UIPadding")
+                padding.PaddingTop = UDim.new(0, 10)
+                padding.PaddingBottom = UDim.new(0, 10)
+                padding.PaddingLeft = UDim.new(0, 10)
+                padding.PaddingRight = UDim.new(0, 10)
+                padding.Parent = contentFrame
+                
+                -- Function buat section
+                local function addSection(text)
+                    local section = Instance.new("TextLabel")
+                    section.Size = UDim2.new(1, 0, 0, 25)
+                    section.BackgroundColor3 = Color3.fromRGB(35, 45, 55)
+                    section.Text = text
+                    section.TextColor3 = Color3.fromRGB(100, 200, 255)
+                    section.Font = Enum.Font.GothamBold
+                    section.TextSize = 14
+                    section.Parent = contentFrame
+                end
+                
+                -- Function buat toggle
+                local function addToggle(text, callback)
+                    local frame = Instance.new("Frame")
+                    frame.Size = UDim2.new(1, 0, 0, 35)
+                    frame.BackgroundColor3 = Color3.fromRGB(35, 45, 55)
+                    frame.BorderSizePixel = 0
+                    frame.Parent = contentFrame
+                    
+                    local label = Instance.new("TextLabel")
+                    label.Size = UDim2.new(0.7, 0, 1, 0)
+                    label.BackgroundTransparency = 1
+                    label.Text = text
+                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    label.TextXAlignment = Enum.TextXAlignment.Left
+                    label.Font = Enum.Font.Gotham
+                    label.TextSize = 14
+                    label.Parent = frame
+                    
+                    local padding = Instance.new("UIPadding")
+                    padding.PaddingLeft = UDim.new(0, 10)
+                    padding.Parent = label
+                    
+                    local toggle = Instance.new("TextButton")
+                    toggle.Size = UDim2.new(0, 50, 0, 25)
+                    toggle.Position = UDim2.new(1, -60, 0.5, -12.5)
+                    toggle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                    toggle.Text = "OFF"
+                    toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    toggle.Font = Enum.Font.GothamBold
+                    toggle.TextSize = 12
+                    toggle.Parent = frame
+                    
+                    local enabled = false
+                    toggle.MouseButton1Click:Connect(function()
+                        enabled = not enabled
+                        toggle.BackgroundColor3 = enabled and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(80, 80, 80)
+                        toggle.Text = enabled and "ON" or "OFF"
+                        callback(enabled)
+                    end)
+                end
+                
+                -- Function buat button
+                local function addButton(text, callback)
+                    local btn = Instance.new("TextButton")
+                    btn.Size = UDim2.new(1, 0, 0, 35)
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+                    btn.Text = text
+                    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    btn.Font = Enum.Font.GothamBold
+                    btn.TextSize = 14
+                    btn.Parent = contentFrame
+                    btn.MouseButton1Click:Connect(callback)
+                end
+                
+                -- AUTO FARM SECTION
+                addSection("⚙️ AUTO FARM")
+                
+                addToggle("🎣 Auto Fishing", function(state)
+                    isFarming = state
+                    if state then task.spawn(autoFish) end
                 end)
-            else
-                pcall(function()
-                    castRemote:FireServer()
+                
+                addToggle("💰 Auto Sell", function(state)
+                    isSelling = state
+                    if state then task.spawn(autoSell) end
                 end)
-            end
-        end
-        
-        -- Tunggu bentar trus reel
-        task.wait(0.5)
-        
-        local reelRemote = getRemote("reel") or getRemote("complete") or getRemote("catch")
-        if reelRemote then
-            if reelRemote:IsA("RemoteFunction") then
-                pcall(function()
-                    reelRemote:InvokeServer()
+                
+                addToggle("💤 Anti AFK", function(state)
+                    isAntiAfk = state
+                    if state then
+                        player.Idled:Connect(function()
+                            VirtualUser:CaptureController()
+                            VirtualUser:ClickButton2(Vector2.new())
+                        end)
+                    end
                 end)
-            else
-                pcall(function()
-                    reelRemote:FireServer()
+                
+                addToggle("🦘 Infinite Jump", function(state)
+                    isInfJump = state
+                    if state then
+                        UserInputService.JumpRequest:Connect(function()
+                            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                                player.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            end
+                        end)
+                    end
                 end)
+                
+                -- TELEPORT SECTION
+                addSection("📍 TELEPORT")
+                
+                local locations = {
+                    {"Fisherman Island", Vector3.new(0, 50, 0)},
+                    {"Tropical Grove", Vector3.new(500, 50, 500)},
+                    {"Esoteric Depths", Vector3.new(-500, -100, 300)},
+                    {"Crystal Depths", Vector3.new(800, -200, -400)},
+                    {"Sell Area", Vector3.new(0, 50, 200)},
+                    {"Shop Area", Vector3.new(100, 50, 100)}
+                }
+                
+                for _, loc in ipairs(locations) do
+                    addButton("📍 " .. loc[1], function()
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            player.Character.HumanoidRootPart.CFrame = CFrame.new(loc[2])
+                        end
+                    end)
+                end
+                
+                -- INFO SECTION
+                addSection("📝 INFO")
+                
+                local info = Instance.new("TextLabel")
+                info.Size = UDim2.new(1, 0, 0, 60)
+                info.BackgroundColor3 = Color3.fromRGB(35, 45, 55)
+                info.Text = "Fish It Script\nSupport All Executor\nTekan Insert untuk toggle"
+                info.TextColor3 = Color3.fromRGB(200, 200, 200)
+                info.Font = Enum.Font.Gotham
+                info.TextSize = 12
+                info.Parent = contentFrame
+                
+                return screenGui
             end
-        end
-        
-        -- Auto collect kalo ada
-        if isAutoCollect then
-            local collectRemote = getRemote("collect") or getRemote("claim")
-            if collectRemote then
-                pcall(function()
-                    collectRemote:FireServer()
-                end)
-            end
-        end
-    end
-end
-
--- Auto Sell Function
-local function startAutoSell()
-    while isAutoSelling do
-        task.wait(30) -- Jual setiap 30 detik
-        
-        local sellRemote = getRemote("sell") or getRemote("sellall") or getRemote("sellitems")
-        if sellRemote then
-            if sellRemote:IsA("RemoteFunction") then
-                pcall(function()
-                    sellRemote:InvokeServer()
-                end)
-            else
-                pcall(function()
-                    sellRemote:FireServer()
-                end)
-            end
-            print("✅ Auto Sell dijalankan")
-        end
-    end
-end
-
--- ESP Function
-local function toggleESP(enable)
-    if enable then
-        -- Loop untuk semua ikan
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name:lower():find("fish") then
-                local highlight = Instance.new("Highlight")
-                highlight.Name = "FishESP"
-                highlight.Parent = obj
-                highlight.FillColor = Color3.new(1, 0, 0)
-                highlight.OutlineColor = Color3.new(1, 1, 1)
-            end
-        end
-        
-        -- Monitor untuk ikan baru
-        workspace.DescendantAdded:Connect(function(obj)
-            if isESPEnabled and obj:IsA("Model") and obj.Name:lower():find("fish") then
-                local highlight = Instance.new("Highlight")
-                highlight.Name = "FishESP"
-                highlight.Parent = obj
-                highlight.FillColor = Color3.new(1, 0, 0)
-                highlight.OutlineColor = Color3.new(1, 1, 1)
-            end
-        end)
-    else
-        -- Hapus semua ESP
-        for _, highlight in pairs(workspace:GetDescendants()) do
-            if highlight.Name == "FishESP" then
-                highlight:Destroy()
-            end
-        end
-    end
-end
-
--- Anti AFK Function
-local function toggleAntiAfk(enable)
-    if enable then
-        -- Simulasi gerakan biar ga di-kick
-        local bb = game:GetService("VirtualUser")
-        player.Idled:Connect(function()
-            if isAntiAfk then
-                bb:CaptureController()
-                bb:ClickButton2(Vector2.new())
-            end
-        end)
-    end
-end
-
--- Infinite Jump Function
-local function toggleInfJump(enable)
-    if enable then
-        local oldJump = character.Humanoid.JumpPower
-        character.Humanoid.JumpPower = 100
-        
-        UserInputService.JumpRequest:Connect(function()
-            if isInfJump and character.Humanoid then
-                character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-        end)
-    else
-        character.Humanoid.JumpPower = 50
-    end
-end
-
--- Speed & Jump Function
-local function setWalkspeed(value)
-    if character and character.Humanoid then
-        character.Humanoid.WalkSpeed = value
-    end
-end
-
-local function setJumpPower(value)
-    if character and character.Humanoid then
-        character.Humanoid.JumpPower = value
-    end
-end
-
--- Auto Upgrade Function
-local function startAutoUpgrade()
-    while isAutoUpgrade do
-        task.wait(60) -- Cek tiap 60 detik
-        
-        local upgradeRemote = getRemote("upgrade") or getRemote("purchaserod") or getRemote("buyrod")
-        if upgradeRemote then
-            pcall(function()
-                upgradeRemote:InvokeServer()
+            
+            -- Create GUI
+            local gui = createGUI()
+            
+            -- Toggle dengan Insert
+            UserInputService.InputBegan:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.Insert then
+                    gui.Enabled = not gui.Enabled
+                end
             end)
-        end
-    end
-end
-
--- FPS Boost Function
-local function toggleFpsBoost(enable)
-    if enable then
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
-        settings().Rendering.QualityLevel = 1
-        for _, child in pairs(workspace:GetDescendants()) do
-            if child:IsA("Decal") or child:IsA("Texture") then
-                child.Transparency = 1
-            end
-        end
-    else
-        Lighting.GlobalShadows = true
-        Lighting.FogEnd = 100000
-        settings().Rendering.QualityLevel = 2
-    end
-end
-
--- Infinite Oxygen Function
-local function toggleInfiniteOxygen(enable)
-    if enable then
-        if character:FindFirstChild("Humanoid") then
-            local humanoid = character.Humanoid
-            local breath = Instance.new("BoolValue")
-            breath.Name = "CanBreathe"
-            breath.Parent = character
-            breath.Value = true
-        end
-    end
-end
-
--- =============================================
--- CREATE TABS
--- =============================================
-
--- Tab 1: Auto Farm
-local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
-
--- Section Fishing Settings
-local FishingSection = FarmTab:CreateSection("⚙️ Fishing Settings")
-
--- Slider Delay
-FarmTab:CreateSlider({
-    Name = "Fishing Delay (seconds)",
-    Range = {0.1, 5},
-    Increment = 0.1,
-    Suffix = "s",
-    CurrentValue = fishDelay,
-    Flag = "FishDelay",
-    Callback = function(value)
-        fishDelay = value
-    end
-})
-
--- Toggle Auto Fish
-FarmTab:CreateToggle({
-    Name = "🎣 Auto Fishing",
-    CurrentValue = false,
-    Flag = "AutoFish",
-    Callback = function(value)
-        isFarming = value
-        if value then
-            task.spawn(startFishing)
-            Rayfield:Notify({
-                Title = "Auto Fishing",
-                Content = "Auto Fishing diaktifkan!",
-                Duration = 2
+            
+            -- Notifikasi
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Fish It Script",
+                Text = "✅ Script berhasil dimuat! Tekan Insert untuk toggle",
+                Duration = 3
             })
-        else
-            Rayfield:Notify({
-                Title = "Auto Fishing",
-                Content = "Auto Fishing dinonaktifkan",
-                Duration = 2
-            })
-        end
+        ]])()
     end
-})
-
--- Toggle Auto Sell
-FarmTab:CreateToggle({
-    Name = "💰 Auto Sell",
-    CurrentValue = false,
-    Flag = "AutoSell",
-    Callback = function(value)
-        isAutoSelling = value
-        if value then
-            task.spawn(startAutoSell)
-        end
-    end
-})
-
--- Toggle Auto Collect
-FarmTab:CreateToggle({
-    Name = "📦 Auto Collect",
-    CurrentValue = false,
-    Flag = "AutoCollect",
-    Callback = function(value)
-        isAutoCollect = value
-    end
-})
-
--- Toggle Auto Upgrade
-FarmTab:CreateToggle({
-    Name = "⬆️ Auto Upgrade Rod",
-    CurrentValue = false,
-    Flag = "AutoUpgrade",
-    Callback = function(value)
-        isAutoUpgrade = value
-        if value then
-            task.spawn(startAutoUpgrade)
-        end
-    end
-})
-
--- Toggle Fast Cast
-FarmTab:CreateToggle({
-    Name = "⚡ Fast Cast",
-    CurrentValue = false,
-    Flag = "FastCast",
-    Callback = function(value)
-        isFastCast = value
-        if value then
-            fishDelay = 0.1
-        else
-            fishDelay = 1.5
-        end
-    end
-})
-
--- Section Auto Farm
-local AutoSection = FarmTab:CreateSection("🤖 Auto Farm Features")
-
--- Toggle Anti AFK
-FarmTab:CreateToggle({
-    Name = "💤 Anti AFK",
-    CurrentValue = false,
-    Flag = "AntiAfk",
-    Callback = function(value)
-        isAntiAfk = value
-        toggleAntiAfk(value)
-    end
-})
-
--- Toggle Infinite Jump
-FarmTab:CreateToggle({
-    Name = "🦘 Infinite Jump",
-    CurrentValue = false,
-    Flag = "InfJump",
-    Callback = function(value)
-        isInfJump = value
-        toggleInfJump(value)
-    end
-})
-
--- Toggle Infinite Oxygen
-FarmTab:CreateToggle({
-    Name: "🌊 Infinite Oxygen",
-    CurrentValue: false,
-    Flag: "InfiniteOxygen",
-    Callback: function(value)
-        isNoOxygen = value
-        toggleInfiniteOxygen(value)
-    end
-})
-
--- Tab 2: Teleport
-local TeleportTab = Window:CreateTab("Teleport", 4483362458)
-
-local TeleportSection = TeleportTab:CreateSection("📍 Teleport Locations")
-
--- Tombol teleport ke lokasi-lokasi penting
-local locations = {
-    {"🏝️ Fisherman Island", Vector3.new(0, 50, 0)},
-    {"🏝️ Tropical Grove", Vector3.new(500, 50, 500)},
-    {"🏝️ Esoteric Depths", Vector3.new(-500, -100, 300)},
-    {"🏝️ Crystal Depths", Vector3.new(800, -200, -400)},
-    {"🏝️ Pirate Cove", Vector3.new(-700, 50, -600)},
-    {"🏝️ The Lost Isle", Vector3.new(1000, 100, 1000)},
-    {"🏝️ Kohana Lava", Vector3.new(1500, 200, 500)},
-    {"🏝️ Ancient Ruins", Vector3.new(-1000, 50, -800)},
-    {"🏝️ Sell Area", Vector3.new(0, 50, 200)},
-    {"🏝️ Shop Area", Vector3.new(100, 50, 100)}
-}
-
-for _, loc in ipairs(locations) do
-    TeleportTab:CreateButton({
-        Name = loc[1],
-        Callback = function()
-            if character and character.HumanoidRootPart then
-                character.HumanoidRootPart.CFrame = CFrame.new(loc[2])
-                Rayfield:Notify({
-                    Title = "Teleport",
-                    Content = "Teleport ke " .. loc[1],
-                    Duration = 2
-                })
-            end
-        end
-    })
 end
 
--- Tab 3: ESP & Visuals
-local ESPTab = Window:CreateTab("ESP & Visuals", 4483362458)
+-- Eksekusi script
+loadScript()
 
-local ESPSection = ESPTab:CreateSection("👁️ ESP Features")
-
--- Toggle Fish ESP
-ESPTab:CreateToggle({
-    Name = "🐟 Fish ESP",
-    CurrentValue = false,
-    Flag = "FishESP",
-    Callback = function(value)
-        isESPEnabled = value
-        toggleESP(value)
-    end
-})
-
--- Toggle Player ESP
-ESPTab:CreateToggle({
-    Name = "👤 Player ESP",
-    CurrentValue = false,
-    Flag = "PlayerESP",
-    Callback = function(value)
-        if value then
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= player and plr.Character then
-                    local highlight = Instance.new("Highlight")
-                    highlight.Name = "PlayerESP"
-                    highlight.Parent = plr.Character
-                    highlight.FillColor = Color3.new(0, 1, 0)
-                    highlight.OutlineColor = Color3.new(1, 1, 1)
-                end
-            end
-        else
-            for _, highlight in pairs(workspace:GetDescendants()) do
-                if highlight.Name == "PlayerESP" then
-                    highlight:Destroy()
-                end
-            end
-        end
-    end
-})
-
--- Toggle FPS Boost
-ESPTab:CreateToggle({
-    Name = "⚡ FPS Boost",
-    CurrentValue = false,
-    Flag = "FPSBoost",
-    Callback = function(value)
-        isFpsBoost = value
-        toggleFpsBoost(value)
-    end
-})
-
--- Tab 4: Character
-local CharacterTab = Window:CreateTab("Character", 4483362458)
-
-local MovementSection = CharacterTab:CreateSection("🏃 Movement")
-
--- Slider WalkSpeed
-CharacterTab:CreateSlider({
-    Name = "WalkSpeed",
-    Range = {16, 200},
-    Increment = 1,
-    Suffix = " speed",
-    CurrentValue = 16,
-    Flag = "WalkSpeed",
-    Callback = function(value)
-        walkSpeedValue = value
-        if isWalkSpeed then
-            setWalkspeed(value)
-        end
-    end
-})
-
-CharacterTab:CreateToggle({
-    Name = "Enable WalkSpeed",
-    CurrentValue = false,
-    Flag = "ToggleWalkSpeed",
-    Callback = function(value)
-        isWalkSpeed = value
-        if value then
-            setWalkspeed(walkSpeedValue)
-        else
-            setWalkspeed(16)
-        end
-    end
-})
-
--- Slider JumpPower
-CharacterTab:CreateSlider({
-    Name = "JumpPower",
-    Range = {50, 500},
-    Increment = 1,
-    Suffix = " power",
-    CurrentValue = 50,
-    Flag = "JumpPower",
-    Callback = function(value)
-        jumpPowerValue = value
-        if isJumpPower then
-            setJumpPower(value)
-        end
-    end
-})
-
-CharacterTab:CreateToggle({
-    Name = "Enable JumpPower",
-    CurrentValue = false,
-    Flag = "ToggleJumpPower",
-    Callback = function(value)
-        isJumpPower = value
-        if value then
-            setJumpPower(jumpPowerValue)
-        else
-            setJumpPower(50)
-        end
-    end
-})
-
--- Tab 5: Shop & Upgrades
-local ShopTab = Window:CreateTab("Shop", 4483362458)
-
-local ShopSection = ShopTab:CreateSection("💰 Quick Buy")
-
--- Daftar rod yang bisa dibeli
-local rods = {
-    {"🎣 Starter Rod", 0},
-    {"🎣 Midnight Rod", 50000},
-    {"🎣 Ghost Fin Rod", 100000},
-    {"🎣 Angler Rod", 150000},
-    {"🎣 Abyssal Rod", 250000},
-    {"🎣 Crystal Rod", 500000}
-}
-
-for _, rod in ipairs(rods) do
-    ShopTab:CreateButton({
-        Name = rod[1] .. " (" .. rod[2] .. " coins)",
-        Callback = function()
-            local buyRemote = getRemote("purchase") or getRemote("buy") or getRemote("shop")
-            if buyRemote then
-                pcall(function()
-                    buyRemote:InvokeServer(rod[1])
-                end)
-            end
-        end
-    })
-end
-
--- Tab 6: Settings
-local SettingsTab = Window:CreateTab("Settings", 4483362458)
-
-local UISection = SettingsTab:CreateSection("🖥️ UI Settings")
-
--- Tombol destroy GUI
-SettingsTab:CreateButton({
-    Name = "❌ Destroy GUI",
-    Callback = function()
-        Rayfield:Destroy()
-    end
-})
-
--- Tombol toggle UI
-SettingsTab:CreateButton({
-    Name = "👁️ Toggle UI",
-    Callback = function()
-        Rayfield:ToggleUI()
-    end
-})
-
--- Credit
-local CreditSection = SettingsTab:CreateSection("📝 Info")
-SettingsTab:CreateParagraph({
-    Title = "Atomic Hub - Fish It",
-    Content = "Fitur Lengkap Auto Fishing\nVersion 1.0.0\n\nGunakan dengan bijak!"
-})
-
--- Notifikasi siap
-Rayfield:Notify({
+-- Notifikasi loading
+game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Fish It Script",
-    Content = "✅ Script berhasil dimuat!",
-    Duration = 3
+    Text = "📥 Loading script... Mohon tunggu",
+    Duration = 2
 })
-
--- Loop untuk maintain karakter
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid")
-    
-    -- Reapply settings
-    if isWalkSpeed then
-        setWalkspeed(walkSpeedValue)
-    end
-    if isJumpPower then
-        setJumpPower(jumpPowerValue)
-    end
-    if isNoOxygen then
-        toggleInfiniteOxygen(true)
-    end
-end)
-
-else
-    -- Kalo salah game
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Fish It Script",
-        Text = "Ini bukan game Fish It! Script hanya untuk Fish It.",
-        Duration = 5
-    })
-end
